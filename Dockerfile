@@ -1,5 +1,5 @@
 # 1. Builder Stage: 의존성 설치
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
