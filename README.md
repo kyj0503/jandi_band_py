@@ -119,7 +119,7 @@ curl http://localhost:5001/health
 echo $GITHUB_TOKEN | docker login ghcr.io -u kyj0503 --password-stdin
 
 # 2. 이미지 빌드
-docker build -t ghcr.io/kyj0503/jandi-band-py:latest .
+docker build --platform linux/amd64 -t ghcr.io/kyj0503/jandi-band-py:latest .
 
 # 3. Push
 docker push ghcr.io/kyj0503/jandi-band-py:latest
