@@ -76,4 +76,4 @@ async def get_timetable(request: Request, url: HttpUrl):
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5001, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

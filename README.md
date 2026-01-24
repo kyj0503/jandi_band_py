@@ -1,34 +1,146 @@
-# FastAPI 에브리타임 시간표 불러오기 서버
+# Jandi Band Py - 에브리타임 시간표 스크래퍼
 
-에브리타임 시간표 URL을 받아서 시간표 데이터를 불러오는 REST API 서버입니다.
-Docker 컨테이너와 Jenkins CI/CD를 통해 자동 배포됩니다.
+jandi_band_backend를 위한 서브 서버로, 에브리타임 시간표 URL을 파싱하여 시간표 정보를 제공합니다.
 
-## 주요 기능 및 특징
+## 주요 기능
 
-- 에브리타임 시간표 공유 URL을 통한 시간표 데이터 불러오기
-- 비동기 처리를 통한 빠른 응답 속도 (~0.1초)
+- **시간표 스크래핑**: 에브리타임 공유 URL에서 시간표 데이터 추출
+- **API 제공**: FastAPI 기반 REST API
+- **헬스체크**: 서비스 상태 확인 엔드포인트
+
+---
 
 ## 기술 스택
 
+| 구분 | 기술 |
+|:-----|:-----|
+| **Language** | Python 3.12 |
+| **Framework** | FastAPI, Uvicorn |
+| **Libraries** | httpx, lxml, pydantic |
+| **Infra** | Docker, Jenkins |
+
+---
+
+## 프로젝트 구조
+
+```
+jandi_band_py/
+├── app.py                  # FastAPI 애플리케이션
+├── service/
+│   ├── __init__.py
+│   └── scraper.py          # 시간표 스크래핑 로직
+├── requirements.txt        # Python 의존성
+├── Dockerfile              # Docker 이미지 빌드
+├── Jenkinsfile             # CI/CD 파이프라인
+└── README.md
+```
+
+---
+
+## 네이티브 환경에서 실행
+
+### 사전 요구사항
+
 - Python 3.12
-- FastAPI
-- Docker
-- Jenkins
 
-## API 명세서
+### 실행 방법
 
-### Base URL
+```bash
+# 1. 가상환경 생성 및 활성화
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 2. 의존성 설치
+pip install -r requirements.txt
+
+# 3. 서버 실행
+python app.py
+# 또는
+uvicorn app:app --reload --host 0.0.0.0 --port 5001
 ```
-Production: https://rhythmeet-be.yeonjae.kr/scraper
-Development: http://localhost:5001
+
+**접속 URL**
+- API 서버: http://localhost:5001
+- 헬스체크: http://localhost:5001/health
+
+---
+
+## 네이티브 환경에서 테스트
+
+```bash
+# 헬스체크 테스트
+curl http://localhost:5001/health
+
+# 시간표 조회 테스트 (에브리타임 공유 URL 필요)
+curl "http://localhost:5001/timetable?url=https://everytime.kr/timetable/share/xxxxxx"
 ```
 
-### Endpoints
+---
 
-#### GET /health
-서비스 상태를 확인하는 헬스체크 엔드포인트입니다.
+## Docker 환경에서 실행
 
-**Response:**
+```bash
+# 1. 이미지 빌드
+docker build -t jandi-band-py:local .
+
+# 2. 컨테이너 실행
+docker run -d \
+  --name jandi-band-py \
+  -p 5001:5001 \
+  jandi-band-py:local
+
+# 3. 로그 확인
+docker logs -f jandi-band-py
+
+# 4. 컨테이너 중지 및 삭제
+docker stop jandi-band-py && docker rm jandi-band-py
+```
+
+---
+
+## Docker 환경에서 테스트
+
+```bash
+# 헬스체크 테스트
+docker exec jandi-band-py curl http://localhost:5001/health
+
+# 또는 호스트에서
+curl http://localhost:5001/health
+```
+
+---
+
+## GHCR에 이미지 Push
+
+### 수동 Push
+
+```bash
+# 1. GHCR 로그인
+echo $GITHUB_TOKEN | docker login ghcr.io -u kyj0503 --password-stdin
+
+# 2. 이미지 빌드
+docker build --platform linux/amd64 -t ghcr.io/kyj0503/jandi-band-py:latest .
+
+# 3. Push
+docker push ghcr.io/kyj0503/jandi-band-py:latest
+```
+
+### 자동 Push (Jenkins)
+
+`main` 또는 `master` 브랜치에 Push하면 Jenkins가 자동으로:
+1. Docker 이미지 빌드 (캐시 활용)
+2. GHCR에 Push (`latest` + 빌드 번호 태그)
+3. home-server 배포 트리거
+
+---
+
+## API 엔드포인트
+
+### GET /health
+
+서비스 상태 확인
+
+**Response**
 ```json
 {
   "status": "healthy",
@@ -36,161 +148,61 @@ Development: http://localhost:5001
 }
 ```
 
-#### GET /timetable
-에브리타임 시간표 데이터를 조회합니다.
+### GET /timetable
 
-**Request:**
-- **Query Parameters:**
-  - `url` (string, required): 에브리타임 시간표 공유 URL
-  - 예시: `https://everytime.kr/@username`
+에브리타임 시간표 조회
 
-**URL 검증:**
-- URL은 반드시 `everytime.kr` 도메인이어야 함
-- 다른 도메인의 URL은 400 에러 반환
+**Parameters**
+- `url` (required): 에브리타임 시간표 공유 URL
 
-**Success Response (200):**
-```json
-{
-  "success": true,
-  "message": "유저 시간표 불러오기 성공",
-  "data": {
-    "timetableData": {
-      "Mon": ["07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "10:30"...],
-      "Tue": ["10:00", "10:30", "11:00", "11:30", "12:00", "12:30"...],
-      "Wed": ["14:00", "14:30", "15:00", "15:30", "16:00", "16:30"...],
-      "Thu": ["07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "10:30"...],
-      "Fri": ["13:00", "13:30", "14:00", "14:30", "15:00", "15:30"...],
-      "Sat": ["07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "10:30"...],
-      "Sun": ["07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "10:30"...],
-    }
-  }
-}
-```
-
-**응답 데이터 설명:**
-- `timetableData`: 각 요일별 **사용 가능한** 시간 목록 (강의 시간의 여집합)
-- 시간 범위: 07:00 ~ 23:30 (30분 단위)
-- 시간 형식: "HH:MM" (24시간 형식)
-
-**Error Responses:**
-
-| Status Code | Description | Response |
-|-------------|-------------|----------|
-| 400 | 잘못된 URL | `{"success": false, "message": "지정되지 않은 URL입니다."}` |
-| 400 | 유효하지 않은 URL | `{"success": false, "message": "유효하지 않은 URL입니다. identifier를 찾을 수 없습니다."}` |
-| 400 | 비공개 시간표 | `{"success": false, "message": "공개되지 않은 시간표입니다."}` |
-| 500 | 서버 오류 | `{"success": false, "message": "서버 오류: {오류내용}"}` |
-
-### CORS 정책
-다음 도메인에서의 요청을 허용합니다:
-- `http://localhost:5173` (개발환경)
-- `https://rhythmeet-be.yeonjae.kr`
-- `https://*.yeonjae.kr`
-- `https://rhythmeet.netlify.app`
-
-## 로컬 개발 환경 설정
-
-### 요구사항
-- Python 3.12 이상
-- Docker
-
-### 설치 및 실행
-
-1. **저장소 클론**
-   ```bash
-   git clone https://github.com/JandiGoorm/jandi_band_py.git
-   cd jandi_band_py
-   ```
-
-2. **가상환경 설정 (권장)**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   ```
-
-3. **의존성 설치**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **서버 실행**
-   ```bash
-   python app.py
-   ```
-
-### Docker로 실행
-
+**Example**
 ```bash
-# 이미지 빌드
-docker build -t fastapi-scraper:latest .
-
-# 컨테이너 실행
-docker run -d \
-  --name fastapi-scraper-app \
-  -p 5001:5001 \
-  -e PYTHONUNBUFFERED=1 \
-  fastapi-scraper:latest
+curl "http://localhost:5001/timetable?url=https://everytime.kr/timetable/share/xxxxxx"
 ```
 
-## 사용 예시
+---
 
-### cURL 예시
-```bash
-# 헬스체크
-curl https://rhythmeet-be.yeonjae.kr/scraper/health
+## 커밋 컨벤션
 
-# 시간표 불러오기
-curl "https://rhythmeet-be.yeonjae.kr/scraper/timetable?url=https://everytime.kr/@username"
+### 기본 포맷
+
+```
+태그(스코프): 제목 (50자 내외)
+
+- 본문 (선택 사항)
 ```
 
-### JavaScript 예시
-```javascript
-// 시간표 데이터 가져오기
-async function getTimetable(everyTimeUrl) {
-  try {
-    const response = await fetch(
-      `https://rhythmeet-be.yeonjae.kr/scraper/timetable?url=${encodeURIComponent(everyTimeUrl)}`
-    );
-    const data = await response.json();
+### 스코프 (Scope)
 
-    if (data.success) {
-      console.log('사용 불가능한 시간:', data.data.timetableData);
-      return data.data.timetableData;
-    } else {
-      console.error('에러:', data.message);
-      throw new Error(data.message);
-    }
-  } catch (error) {
-    console.error('네트워크 에러:', error);
-    throw error;
-  }
-}
+| 스코프 | 설명 |
+|:-------|:-----|
+| `be` | Backend 관련 코드 |
+| `infra` | 배포, Docker, CI/CD 등 |
 
-// 사용 예시
-getTimetable('https://everytime.kr/@username')
-  .then(timetable => {
-    console.log('월요일 사용 불가능한 시간:', timetable.Mon);
-  });
+### 태그 (Type)
+
+| 태그 | 설명 | 예시 |
+|:-----|:-----|:-----|
+| `feat` | 새로운 기능 추가 | API 개발 |
+| `fix` | 버그 수정 | 로직 오류 수정 |
+| `docs` | 문서 수정 | README |
+| `style` | 코드 포맷팅 | 들여쓰기 정렬 |
+| `refactor` | 코드 리팩토링 | 구조 개선 |
+| `test` | 테스트 코드 | 테스트 추가/수정 |
+| `chore` | 기타 잡무 | 빌드 설정 |
+
+### 예시
+
+```
+feat(be): 시간표 파싱 로직 개선
+fix(be): 에브리타임 URL 검증 오류 수정
+chore(infra): Dockerfile 최적화
 ```
 
-## 성능 및 최적화
+---
 
-### 현재 성능 지표
-- **응답 시간**: ~100ms (네트워크 지연 포함)
-- **메모리 사용량**: ~50MB
+## 운영 환경
 
-### 최적화 기법
-1. **비동기 처리**: httpx AsyncClient 사용
-2. **연결 재사용**: HTTP 연결 풀링
-3. **효율적인 XML 파싱**: lxml 라이브러리
-4. **리소스 관리**: lifespan을 통한 적절한 정리
-
-## 주의사항: 개인정보 보호
-
-### ⚠️ 중요! 본인의 시간표만 사용하세요
-
-본 서비스는 **반드시 본인의 에브리타임 시간표 URL만 사용**해야 합니다.
-
-**법적 고지:**
-- 본 서비스는 개인정보 자기결정권을 존중하며, 사용자 본인의 정보 활용을 전제로 합니다.
-- 다른 사람의 시간표 정보를 무단으로 활용하는 것은 법적인 문제가 될 수 있습니다.
+- Jenkins 파이프라인을 통해 Docker 이미지 빌드 후 GHCR에 Push
+- 운영 환경 배포는 **home-server** 리포지토리에서 중앙 관리
+- jandi-band-backend와 함께 실행되어야 함
