@@ -4,6 +4,7 @@ pipeline {
     environment {
         GHCR_OWNER = 'kyj0503'
         IMAGE_NAME = 'jandi-band-py'
+        DOCKER_BUILDKIT = '1'
     }
     
     stages {
@@ -12,8 +13,8 @@ pipeline {
                 checkout scm
             }
         }
-        
-        stage('Build and Push to GHCR') {
+
+        stage('Setup Buildx') {
             when {
                 anyOf {
                     branch 'main'
@@ -22,23 +23,42 @@ pipeline {
             }
             steps {
                 script {
-                    def fullImageName = "ghcr.io/${env.GHCR_OWNER}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    def latestImageName = "ghcr.io/${env.GHCR_OWNER}/${env.IMAGE_NAME}:latest"
+                    // Docker Buildx 설정 (멀티 아키텍처 빌드용)
+                    sh '''
+                        docker buildx create --name multiarch-builder --use --bootstrap || docker buildx use multiarch-builder
+                        docker buildx inspect --bootstrap
+                    '''
+                }
+            }
+        }
+        
+        stage('Build and Push Multi-Arch Image') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    def fullImageName = "ghcr.io/${env.GHCR_OWNER}/${env.IMAGE_NAME}"
                     
-                    echo "Building Docker image: ${fullImageName}"
+                    echo "Building multi-arch Docker image: ${fullImageName}"
                     
-                    docker.withRegistry("https://ghcr.io", 'github-token') {
-                        // 캐시용 이미지 Pull (실패해도 무시)
-                        sh "docker pull ${latestImageName} || true"
-                        
-                        // 캐시를 활용하여 빌드
-                        docker.build(fullImageName, "--cache-from ${latestImageName} .")
-                        
-                        // Push
-                        echo "Pushing Docker image to GHCR..."
-                        docker.image(fullImageName).push()
-                        docker.image(fullImageName).push('latest')
+                    // GHCR 로그인
+                    withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                        sh 'echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_USER --password-stdin'
                     }
+                    
+                    // 멀티 아키텍처 빌드 및 푸시 (AMD64 + ARM64)
+                    sh """
+                        docker buildx build \
+                            --platform linux/amd64,linux/arm64 \
+                            --tag ${fullImageName}:${env.BUILD_NUMBER} \
+                            --tag ${fullImageName}:latest \
+                            --push \
+                            .
+                    """
                 }
             }
         }
