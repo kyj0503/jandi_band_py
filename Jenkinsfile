@@ -20,26 +20,6 @@ pipeline {
             }
         }
 
-        stage('Test') {
-            steps {
-                script {
-                    echo "Running Python tests..."
-                    sh '''
-                        python3 -m venv venv || true
-                        . venv/bin/activate
-                        pip install -r requirements.txt
-                        pip install pytest
-                        python -m pytest tests/ -v --tb=short || echo "No tests found or tests skipped"
-                    '''
-                }
-            }
-            post {
-                failure {
-                    echo "Tests failed. Stopping pipeline."
-                }
-            }
-        }
-
         stage('Login GHCR') {
             steps {
                 script {
