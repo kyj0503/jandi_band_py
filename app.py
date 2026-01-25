@@ -2,7 +2,6 @@ import logging
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl
 from service.scraper import TimetableLoader
@@ -31,19 +30,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,  # type: ignore
-    allow_origins=[
-        "http://localhost:5173",
-        "https://rhythmeet-be.yeonjae.kr",
-        "https://*.yeonjae.kr",
-        "https://rhythmeet.netlify.app",
-        "https://rhythmeet.site"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS는 nginx에서 통합 관리 (home-server/nginx/nginx.conf)
 
 class HealthCheckResponse(BaseModel):
     status: str

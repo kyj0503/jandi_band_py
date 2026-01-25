@@ -45,10 +45,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 USER scraper
 
-EXPOSE 5001
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:5001/health || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
 # 애플리케이션 실행
 CMD ["python", "app.py"]

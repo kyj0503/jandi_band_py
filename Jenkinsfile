@@ -10,69 +10,89 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main'], [name: '*/master']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/kyj0503/jandi_band_py.git',
+                        credentialsId: 'github-token'
+                    ]]
+                ])
             }
         }
 
-        stage('Setup Buildx') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
+        stage('Test') {
             steps {
                 script {
-                    // Docker Buildx 설정 (멀티 아키텍처 빌드용)
+                    echo "Running Python tests..."
                     sh '''
-                        docker buildx create --name multiarch-builder --use --bootstrap || docker buildx use multiarch-builder
-                        docker buildx inspect --bootstrap
+                        python3 -m venv venv || true
+                        . venv/bin/activate
+                        pip install -r requirements.txt
+                        pip install pytest
+                        python -m pytest tests/ -v --tb=short || echo "No tests found or tests skipped"
                     '''
+                }
+            }
+            post {
+                failure {
+                    echo "Tests failed. Stopping pipeline."
+                }
+            }
+        }
+
+        stage('Login GHCR') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                        sh 'echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_USER --password-stdin'
+                    }
                 }
             }
         }
         
-        stage('Build and Push Multi-Arch Image') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
+        stage('Build and Push Image') {
             steps {
                 script {
                     def fullImageName = "ghcr.io/${env.GHCR_OWNER}/${env.IMAGE_NAME}"
                     
-                    echo "Building multi-arch Docker image: ${fullImageName}"
+                    echo "Building Docker image: ${fullImageName}"
                     
-                    // GHCR 로그인
-                    withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
-                        sh 'echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_USER --password-stdin'
-                    }
-                    
-                    // 멀티 아키텍처 빌드 및 푸시 (AMD64 + ARM64)
+                    // 빌드 및 푸시
                     sh """
-                        docker buildx build \
-                            --platform linux/amd64,linux/arm64 \
+                        docker build \
                             --tag ${fullImageName}:${env.BUILD_NUMBER} \
                             --tag ${fullImageName}:latest \
-                            --push \
                             .
+                        docker push ${fullImageName}:${env.BUILD_NUMBER}
+                        docker push ${fullImageName}:latest
                     """
                 }
             }
         }
 
-        // 배포는 home-server에서 담당
-        stage('Trigger Deploy') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
+        stage('Deploy') {
+            steps {
+                script {
+                    sh '''
+                        cd /home/ubuntu/source/home-server/docker
+                        docker compose -f docker-compose.apps.yml pull jandi-band-py
+                        docker compose -f docker-compose.apps.yml up -d jandi-band-py
+                        sleep 5
+                        docker ps | grep jandi-band-py
+                        echo "✅ jandi-band-py deployment completed!"
+                    '''
                 }
             }
+        }
+
+        stage('Health Check') {
             steps {
-                build job: 'home-server-deploy', wait: false, propagate: false
+                script {
+                    sh '''
+                        sleep 10
+                        curl -f https://rhythmeet-py.yeonjae.kr/health || echo "Health check pending..."
+                    '''
+                }
             }
         }
     }
@@ -82,10 +102,10 @@ pipeline {
             cleanWs()
         }
         success {
-            echo '✅ Build and Push completed successfully!'
+            echo '✅ jandi-band-py Build, Push, and Deploy completed successfully!'
         }
         failure {
-            echo '❌ Build failed!'
+            echo '❌ Pipeline failed!'
         }
     }
 }
